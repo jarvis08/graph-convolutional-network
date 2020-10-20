@@ -167,16 +167,13 @@ class GCN:
                 ema_loss = loss
             ema_loss = ema_loss * 0.99 + loss * 0.01
 
-            if step < GCN.min_epochs:
-                log = "step: {}/{}  loss: {:.2f}  ema_loss: {:.2f}  train: {:.4f}  valid: {:.4f}  time: {:.2f}".format(step, GCN.max_epochs, loss, ema_loss, train_score, valid_score, time.time()-step_time)
-                print(log)
-                self.logger.info(log)
-            else:
-                log = "step: {}/{}  loss: {:.2f}  ema_loss: {:.2f}  train: {:.4f}  valid: {:.4f}  best: {}, {:.4f}  time: {:.2f}".format(step, GCN.max_epochs, loss, ema_loss, train_score, valid_score, step - self.fury, self.best, time.time()-step_time)
-                print(log)
-                self.logger.info(log)
-
-            if step < GCN.min_epochs:
+            log = "step: {}/{}  loss: {:.2f}  ema_loss: {:.2f}  train: {:.4f}  valid: {:.4f}  time: {:.2f}".format(step, GCN.max_epochs, loss, ema_loss, train_score, valid_score, time.time()-step_time)
+            if step > GCN.min_epochs:
+                log = log + "  best: {}, {:.4f}".format(step - self.fury, self.best)
+            print(log)
+            self.logger.info(log)
+            
+            if step <= GCN.min_epochs:
                 continue
             if self.check_early_stopping(valid_score):
                 break
