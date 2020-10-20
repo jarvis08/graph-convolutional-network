@@ -138,12 +138,12 @@ class GCN:
     def train_step(self):
         with tf.GradientTape() as tape:
             predictions = self.model([self.features, self.fltr], training=True)
-            loss = compute_loss(self.train_labels, predictions[self.train_mask])
+            loss = self.compute_loss(self.train_labels, predictions[self.train_mask])
             loss += sum(self.model.losses)
         gradients = tape.gradient(loss, self.model.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
-        train_f1_score = micro_f1(self.train_labels, predictions[self.train_mask])
-        valid_f1_score = micro_f1(self.valid_labels, predictions[self.valid_mask])
+        train_f1_score = self.micro_f1(self.train_labels, predictions[self.train_mask])
+        valid_f1_score = self.micro_f1(self.valid_labels, predictions[self.valid_mask])
         return loss, train_f1_score * 100, valid_f1_score * 100
 
 
