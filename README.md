@@ -24,7 +24,7 @@ __Dataset must be downloaded (not public)__
 
 Run `python train_gcn_v3.py` at the root dir.
 
-## 2-2. Train with multi-node(server)
+## 2-2. Train with multi-server & multi-gpu
 
 1. Set nodes' IP addresses in `dist_gcn_v3.py` file
 
@@ -37,6 +37,10 @@ $ python dist_gcn_v3.py 0
 # Other worker nodes
 $ python dist_gcn_v3.py 1
 ```
+
+## 2-3. Train with multi-server & single-gpu
+
+Just uncomment line 8(`os.evirion...`) and use commands above 2-2.
 
 ## 3. Model Checkpoint & Logging
 

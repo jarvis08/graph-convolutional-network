@@ -5,10 +5,10 @@ import logging
 
 # Set distributed environment
 os.environ.pop('TF_CONFIG', None)
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+#os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 tf_config = {
     'cluster': {
-        'worker': ["10.0.0.5:25000", "10.0.0.6:25000", "10.0.0.7:25000", "10.0.0.8:25000"]
+        'worker': ["10.20.18.215:25000", "10.20.18.216:25000", "10.20.18.217:25000", "10.20.18.218:25000"]
     },
     'task': {'type': 'worker', 'index': int(sys.argv[1])}
 }
@@ -19,6 +19,7 @@ chief = True if tf_config['task']['index'] == 0 else False
 import tensorflow as tf
 strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 tf.keras.backend.set_floatx('float64')
+n_gpu = len(tf.config.experimental.list_physical_devices('GPU'))
 
 import time
 from datetime import datetime
@@ -37,8 +38,8 @@ class GCN:
     now = None
     orig_max_epochs = 14000
     orig_min_epochs = 12000
-    max_epochs_per_worker = int(orig_max_epochs / n_workers)
-    min_epochs_per_worker = int(orig_min_epochs / n_workers)
+    max_epochs_per_worker = int(orig_max_epochs / n_workers / n_gpu)
+    min_epochs_per_worker = int(orig_min_epochs / n_workers / n_gpu)
     early_stop = 0.005
     patience = 500
 
@@ -186,10 +187,13 @@ class GCN:
             step_time = time.time()
             loss, train_score, valid_score = distributed_train_step()
 
-            loss /= n_workers
+            loss /= n_workers * n_gpu
             if not ema_loss:
                 ema_loss = loss
             ema_loss = ema_loss * 0.99 + loss * 0.01
+            if n_gpu > 1:
+                train_score = tf.reduce_mean(train_score.values)
+                valid_score = tf.reduce_mean(valid_score.values)
 
             if chief:
                 if step < GCN.min_epochs_per_worker:
