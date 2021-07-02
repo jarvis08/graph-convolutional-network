@@ -12,8 +12,8 @@ import tensorflow as tf
 NUM_WORKERS = 3
 NUM_PS = 1
 
-workers = ["10.20.18.215:25000", "10.20.18.216:25000", "10.20.18.217:25000"]
-ps = ["10.20.18.218:25000"]
+workers = ["10.20.18.215:25000", "10.20.18.216:26000", "10.20.18.217:27000"]
+ps = ["10.20.18.218:28000"]
 cluster_dict = dict()
 cluster_dict['worker'] = workers
 cluster_dict['ps'] = ps
