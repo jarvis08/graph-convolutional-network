@@ -19,54 +19,9 @@ elif sys.argv[1] in ['1', '2']:
 else:
     tf_config["task"] = {"type": "ps", "index": 0}
 os.environ["TF_CONFIG"] = json.dumps(tf_config)
+
+
 import tensorflow as tf
-cluster_resolver = tf.distribute.cluster_resolver.TFConfigClusterResolver()
-chief = True if not int(sys.argv[1]) else False
-NUM_WORKERS = 2
-NUM_PS = 1
-#
-# chief = ["10.20.18.215:25000"]
-# workers = ["10.20.18.216:26000", "10.20.18.217:27000"]
-# ps = ["10.20.18.218:28000"]
-# cluster_dict = dict()
-# cluster_dict['chief'] = chief
-# cluster_dict['worker'] = workers
-# cluster_dict['ps'] = ps
-# cluster_spec = tf.train.ClusterSpec(cluster_dict)
-#
-# tf.distribute.Server(
-#     cluster_spec,
-#     job_name="chief",
-#     task_index=0)
-# for i in range(NUM_WORKERS):
-#     tf.distribute.Server(
-#         cluster_spec,
-#         job_name="worker",
-#         task_index=i)
-# tf.distribute.Server(
-#     cluster_spec,
-#     job_name="ps",
-#     task_index=0)
-#
-# cluster_resolver = tf.distribute.cluster_resolver.SimpleClusterResolver(cluster_spec)
-# server = tf.distribute.Server(
-#     cluster_resolver.cluster_spec(),
-#     job_name=cluster_resolver.task_type,
-#     task_index=cluster_resolver.task_id,
-#     # protocol=cluster_resolver.rpc_layer or "grpc",
-#     start=True)
-# server.join()
-# variable_partitioner = (
-#   tf.distribute.experimental.partitioners.FixedShardsPartitioner(
-#     num_shards = 2))
-
-# strategy = tf.distribute.experimental.ParameterServerStrategy(
-#     cluster_resolver,
-#     variable_partitioner=variable_partitioner)
-strategy = tf.distribute.experimental.ParameterServerStrategy(cluster_resolver)
-coordinator = tf.distribute.experimental.coordinator.ClusterCoordinator(strategy)
-n_gpu = len(tf.config.experimental.list_physical_devices('GPU'))
-
 import time
 from datetime import datetime
 
@@ -78,6 +33,11 @@ from tensorflow.keras.layers import Input, Dropout, Dense
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam, schedules
 from tensorflow.keras.regularizers import l2
+
+
+chief = True if not int(sys.argv[1]) else False
+n_workers = len(tf_config["cluster"]["workers"])
+n_gpu = len(tf.config.experimental.list_physical_devices('GPU'))
 
 
 class GCN:
@@ -182,6 +142,10 @@ class GCN:
         # Load data
         self.load_folded_dataset(DATA)
 
+        cluster_resolver = tf.distribute.cluster_resolver.TFConfigClusterResolver()
+        strategy = tf.distribute.experimental.ParameterServerStrategy(cluster_resolver)
+
+
         with strategy.scope():
             def compute_loss(labels, predictions):
                 loss = self.loss_object(labels, predictions)
@@ -227,42 +191,53 @@ class GCN:
             self.optimizer = Adam(lr=1e-2)
         self.model.summary(print_fn=self.logger.debug)
 
-        train_time = time.time()
-        ema_loss = 0
-        for step in range(1, GCN.max_epochs_per_worker+1):
-            step_time = time.time()
-            # loss, train_score, valid_score = distributed_train_step()
-            loss, train_score, valid_score = coordinator.schedule(distributed_train_step)
-            coordinator.join()
+        if cluster_resolver.task_type in ("worker", "ps"):
+            server = tf.distribute.Server(
+                cluster_resolver.cluster_spec(),
+                job_name=cluster_resolver.task_type,
+                task_index=cluster_resolver.task_id,
+                protocol=cluster_resolver.rpc_layer or "grpc",
+                start=True)
+            server.join()
+        else:
+            coordinator = tf.distribute.experimental.coordinator.ClusterCoordinator(strategy)
 
-            if chief:
-                loss /= NUM_WORKERS * n_gpu
-                if not ema_loss:
-                    ema_loss = loss
-                ema_loss = ema_loss * 0.99 + loss * 0.01
-                if n_gpu > 1:
-                    train_score = tf.reduce_mean(train_score.values)
-                    valid_score = tf.reduce_mean(valid_score.values)
+            train_time = time.time()
+            ema_loss = 0
+            for step in range(1, GCN.max_epochs_per_worker+1):
+                step_time = time.time()
+                # loss, train_score, valid_score = distributed_train_step()
+                loss, train_score, valid_score = coordinator.schedule(distributed_train_step)
+                coordinator.join()
 
-                if step < GCN.min_epochs_per_worker:
-                    log = "step: {}/{}  loss: {:.2f}  ema_loss: {:.2f}  train: {:.3f} %  valid: {:.3f} %  time: {:.1f} sec".format(step, GCN.max_epochs_per_worker, loss, ema_loss, train_score, valid_score, time.time()-step_time)
-                    print(log)
-                    self.logger.info(log)
+                if chief:
+                    loss /= n_workers * n_gpu
+                    if not ema_loss:
+                        ema_loss = loss
+                    ema_loss = ema_loss * 0.99 + loss * 0.01
+                    if n_gpu > 1:
+                        train_score = tf.reduce_mean(train_score.values)
+                        valid_score = tf.reduce_mean(valid_score.values)
+
+                    if step < GCN.min_epochs_per_worker:
+                        log = "step: {}/{}  loss: {:.2f}  ema_loss: {:.2f}  train: {:.3f} %  valid: {:.3f} %  time: {:.1f} sec".format(step, GCN.max_epochs_per_worker, loss, ema_loss, train_score, valid_score, time.time()-step_time)
+                        print(log)
+                        self.logger.info(log)
+                    else:
+                        log = "step: {}/{}  loss: {:.2f}  ema_loss: {:.2f}  train: {:.3f} %  valid: {:.3f} %  best: {}, {:.4f} %  time: {:.1f} sec".format(step, GCN.max_epochs_per_worker, loss, ema_loss, train_score, valid_score, step - self.fury, self.best, time.time()-step_time)
+                        print(log)
+                        self.logger.info(log)
+
+                    if step < GCN.min_epochs_per_worker:
+                        continue
+                    if self.check_early_stopping(valid_score):
+                        break
                 else:
-                    log = "step: {}/{}  loss: {:.2f}  ema_loss: {:.2f}  train: {:.3f} %  valid: {:.3f} %  best: {}, {:.4f} %  time: {:.1f} sec".format(step, GCN.max_epochs_per_worker, loss, ema_loss, train_score, valid_score, step - self.fury, self.best, time.time()-step_time)
-                    print(log)
-                    self.logger.info(log)
+                    print(f"step: {step}")
 
-                if step < GCN.min_epochs_per_worker:
-                    continue
-                if self.check_early_stopping(valid_score):
-                    break
-            else:
-                print(f"step: {step}")
-
-        log = "Training time: {:.4f}".format(time.time()-train_time)
-        print(log)
-        self.logger.info(log)
+            log = "Training time: {:.4f}".format(time.time()-train_time)
+            print(log)
+            self.logger.info(log)
 
 
 if __name__=="__main__":
