@@ -37,15 +37,17 @@ from tensorflow.keras.regularizers import l2
 
 chief = True if not int(sys.argv[1]) else False
 n_workers = len(tf_config["cluster"]["worker"])
-n_gpu = len(tf.config.experimental.list_physical_devices('GPU'))
+# n_gpu = len(tf.config.experimental.list_physical_devices('GPU'))
 
 
 class GCN:
     now = None
     orig_max_epochs = 14000
     orig_min_epochs = 12000
-    max_epochs_per_worker = int(orig_max_epochs / n_workers / n_gpu)
-    min_epochs_per_worker = int(orig_min_epochs / n_workers / n_gpu)
+    # max_epochs_per_worker = int(orig_max_epochs / n_workers / n_gpu)
+    # min_epochs_per_worker = int(orig_min_epochs / n_workers / n_gpu)
+    max_epochs_per_worker = int(orig_max_epochs / n_workers)
+    min_epochs_per_worker = int(orig_min_epochs / n_workers)
     early_stop = 0.005
     patience = 500
 
@@ -211,13 +213,14 @@ class GCN:
                 coordinator.join()
 
                 if chief:
-                    loss /= n_workers * n_gpu
+                    # loss /= n_workers * n_gpu
+                    loss /= n_workers
                     if not ema_loss:
                         ema_loss = loss
                     ema_loss = ema_loss * 0.99 + loss * 0.01
-                    if n_gpu > 1:
-                        train_score = tf.reduce_mean(train_score.values)
-                        valid_score = tf.reduce_mean(valid_score.values)
+                    # if n_gpu > 1:
+                    #     train_score = tf.reduce_mean(train_score.values)
+                    #     valid_score = tf.reduce_mean(valid_score.values)
 
                     if step < GCN.min_epochs_per_worker:
                         log = "step: {}/{}  loss: {:.2f}  ema_loss: {:.2f}  train: {:.3f} %  valid: {:.3f} %  time: {:.1f} sec".format(step, GCN.max_epochs_per_worker, loss, ema_loss, train_score, valid_score, time.time()-step_time)
