@@ -21,19 +21,19 @@ cluster_dict['worker'] = workers
 cluster_dict['ps'] = ps
 cluster_spec = tf.train.ClusterSpec(cluster_dict)
 
-# tf.distribute.Server(
-#     cluster_spec,
-#     job_name="chief",
-#     task_index=0)
-# for i in range(NUM_WORKERS):
-#     tf.distribute.Server(
-#         cluster_spec,
-#         job_name="worker",
-#         task_index=i)
-# tf.distribute.Server(
-#     cluster_spec,
-#     job_name="ps",
-#     task_index=0)
+tf.distribute.Server(
+    cluster_spec,
+    job_name="chief",
+    task_index=0)
+for i in range(NUM_WORKERS):
+    tf.distribute.Server(
+        cluster_spec,
+        job_name="worker",
+        task_index=i)
+tf.distribute.Server(
+    cluster_spec,
+    job_name="ps",
+    task_index=0)
 
 cluster_resolver = tf.distribute.cluster_resolver.SimpleClusterResolver(cluster_spec)
 server = tf.distribute.Server(
