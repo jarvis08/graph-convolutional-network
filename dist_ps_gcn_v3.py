@@ -6,52 +6,65 @@ import logging
 # Set distributed environment
 os.environ.pop('TF_CONFIG', None)
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-
+tf_config = dict()
+tf_config["cluster"] = {
+    "chief": ["10.20.18.215:28000"],
+    "worker": ["10.20.18.216:26000", "10.20.18.217:27000"],
+    "ps": ["10.20.18.218:28000"]
+}
+if sys.argv[1] == "0":
+    tf_config["task"] = {"type": "chief", "index": 0}
+elif sys.argv[1] in ['1', '2']:
+    tf_config["task"] = {"type": "worker", "index": int(sys.argv[1]) - 1}
+else:
+    tf_config["task"] = {"type": "ps", "index": 0}
+os.environ["TF_CONFIG"] = json.dumps(tf_config)
 import tensorflow as tf
-
+cluster_resolver = tf.distribute.cluster_resolver.TFConfigClusterResolver()
+chief = True if not int(sys.argv[1]) else False
 NUM_WORKERS = 2
 NUM_PS = 1
+#
+# chief = ["10.20.18.215:25000"]
+# workers = ["10.20.18.216:26000", "10.20.18.217:27000"]
+# ps = ["10.20.18.218:28000"]
+# cluster_dict = dict()
+# cluster_dict['chief'] = chief
+# cluster_dict['worker'] = workers
+# cluster_dict['ps'] = ps
+# cluster_spec = tf.train.ClusterSpec(cluster_dict)
+#
+# tf.distribute.Server(
+#     cluster_spec,
+#     job_name="chief",
+#     task_index=0)
+# for i in range(NUM_WORKERS):
+#     tf.distribute.Server(
+#         cluster_spec,
+#         job_name="worker",
+#         task_index=i)
+# tf.distribute.Server(
+#     cluster_spec,
+#     job_name="ps",
+#     task_index=0)
+#
+# cluster_resolver = tf.distribute.cluster_resolver.SimpleClusterResolver(cluster_spec)
+# server = tf.distribute.Server(
+#     cluster_resolver.cluster_spec(),
+#     job_name=cluster_resolver.task_type,
+#     task_index=cluster_resolver.task_id,
+#     # protocol=cluster_resolver.rpc_layer or "grpc",
+#     start=True)
+# server.join()
+# variable_partitioner = (
+#   tf.distribute.experimental.partitioners.FixedShardsPartitioner(
+#     num_shards = 2))
 
-chief = ["10.20.18.215:25000"]
-workers = ["10.20.18.216:26000", "10.20.18.217:27000"]
-ps = ["10.20.18.218:28000"]
-cluster_dict = dict()
-cluster_dict['chief'] = chief
-cluster_dict['worker'] = workers
-cluster_dict['ps'] = ps
-cluster_spec = tf.train.ClusterSpec(cluster_dict)
-
-tf.distribute.Server(
-    cluster_spec,
-    job_name="chief",
-    task_index=0)
-for i in range(NUM_WORKERS):
-    tf.distribute.Server(
-        cluster_spec,
-        job_name="worker",
-        task_index=i)
-tf.distribute.Server(
-    cluster_spec,
-    job_name="ps",
-    task_index=0)
-
-cluster_resolver = tf.distribute.cluster_resolver.SimpleClusterResolver(cluster_spec)
-server = tf.distribute.Server(
-    cluster_resolver.cluster_spec(),
-    job_name=cluster_resolver.task_type,
-    task_index=cluster_resolver.task_id,
-    # protocol=cluster_resolver.rpc_layer or "grpc",
-    start=True)
-server.join()
-variable_partitioner = (
-  tf.distribute.experimental.partitioners.FixedShardsPartitioner(
-    num_shards = 2))
-
-strategy = tf.distribute.experimental.ParameterServerStrategy(
-    cluster_resolver,
-    variable_partitioner=variable_partitioner)
+# strategy = tf.distribute.experimental.ParameterServerStrategy(
+#     cluster_resolver,
+#     variable_partitioner=variable_partitioner)
+strategy = tf.distribute.experimental.ParameterServerStrategy(cluster_resolver)
 coordinator = tf.distribute.experimental.coordinator.ClusterCoordinator(strategy)
-chief = True if not int(sys.argv[1]) else False
 n_gpu = len(tf.config.experimental.list_physical_devices('GPU'))
 
 import time
