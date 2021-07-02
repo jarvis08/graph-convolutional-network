@@ -6,32 +6,38 @@ import logging
 # Set distributed environment
 os.environ.pop('TF_CONFIG', None)
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-tf_config = {
-    "cluster": {
-                "worker": ["10.20.18.215:25000", "10.20.18.216:25000", "10.20.18.217:25000"],
-                "ps": ["10.20.18.218:25000"]
-    },
-    "task": {
-             "type": "ps",
-             "index": int(sys.argv[1])}
-}
-os.environ['TF_CONFIG'] = json.dumps(tf_config)
-n_workers = len(tf_config['cluster']['worker'])
-chief = True if tf_config['task']['index'] == 0 else False
 
 import tensorflow as tf
 
-# variable_partitioner = (
-#   tf.distribute.experimental.partitioners.FixedShardsPartitioner(
-#     num_shards = 2))
-cluster_spec = tf.train.ClusterSpec(tf_config["cluster"])
-cluster_resolver = tf.distribute.cluster_resolver.SimpleClusterResolver(cluster_spec)
-# cluster_resolver = tf.distribute.cluster_resolver.SimpleClusterResolver(
-      # cluster_spec, rpc_layer="grpc")
-strategy = tf.distribute.experimental.ParameterServerStrategy(
-  cluster_resolver=cluster_resolver)
-coordinator = tf.distribute.experimental.coordinator.ClusterCoordinator(strategy)
+NUM_WORKERS = 3
+NUM_PS = 1
 
+workers = ["10.20.18.215:25000", "10.20.18.216:25000", "10.20.18.217:25000"]
+ps = ["10.20.18.218:25000"]
+cluster_dict = dict()
+cluster_dict['worker'] = workers
+cluster_dict['ps'] = ps
+cluster_spec = tf.train.ClusterSpec(cluster_dict)
+for i in range(NUM_WORKERS):
+    tf.distribute.Server(
+        cluster_spec,
+        job_name="worker",
+        task_index=i)
+tf.distribute.Server(
+    cluster_spec,
+    job_name="ps",
+    task_index=0)
+cluster_resolver = tf.distribute.cluster_resolver.SimpleClusterResolver(cluster_spec)
+
+variable_partitioner = (
+  tf.distribute.experimental.partitioners.FixedShardsPartitioner(
+    num_shards = 2))
+
+strategy = tf.distribute.experimental.ParameterServerStrategy(
+    cluster_resolver,
+    variable_partitioner=variable_partitioner)
+# coordinator = tf.distribute.experimental.coordinator.ClusterCoordinator(strategy)
+chief = True if not int(sys.argv[1]) else False
 n_gpu = len(tf.config.experimental.list_physical_devices('GPU'))
 
 import time
@@ -199,9 +205,9 @@ class GCN:
         for step in range(1, GCN.max_epochs_per_worker+1):
             step_time = time.time()
             loss, train_score, valid_score = distributed_train_step()
-            coordinator.join()
+            # coordinator.join()
 
-            loss /= n_workers * n_gpu
+            loss /= NUM_WORKERS * n_gpu
             if not ema_loss:
                 ema_loss = loss
             ema_loss = ema_loss * 0.99 + loss * 0.01
