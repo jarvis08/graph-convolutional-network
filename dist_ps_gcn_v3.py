@@ -22,8 +22,6 @@ os.environ["GRPC_FAIL_FAST"] = "use_caller"
 
 
 import tensorflow as tf
-cluster_resolver = tf.distribute.cluster_resolver.TFConfigClusterResolver()
-strategy = tf.distribute.experimental.ParameterServerStrategy(cluster_resolver)
 import time
 from datetime import datetime
 
@@ -145,49 +143,14 @@ class GCN:
 
         # Load data
         self.load_folded_dataset(DATA)
-
-        with strategy.scope():
-            def compute_loss(labels, predictions):
-                loss = self.loss_object(labels, predictions)
-                return tf.reduce_mean(tf.reduce_sum(loss, axis=-1))  # Compute mean loss _per node_
-
-            def micro_f1(labels, logits):
-                predicted = tf.math.round(tf.nn.sigmoid(logits))
-                predicted = tf.cast(predicted, dtype=tf.int32)
-                labels = tf.cast(labels, dtype=tf.int32)
-
-                true_pos = tf.math.count_nonzero(predicted * labels)
-                false_pos = tf.math.count_nonzero(predicted * (labels - 1))
-                false_neg = tf.math.count_nonzero((predicted - 1) * labels)
-
-                precision = true_pos / (true_pos + false_pos)
-                recall = true_pos / (true_pos + false_neg)
-                fmeasure = (2 * precision * recall) / (precision + recall)
-                return tf.cast(fmeasure, tf.float32)
-
-            @tf.function
-            def train_step():
-                with tf.GradientTape() as tape:
-                    predictions = self.model([self.features, self.fltr], training=True)
-                    loss = compute_loss(self.train_labels, predictions[self.train_mask])
-                    loss += sum(self.model.losses)
-                gradients = tape.gradient(loss, self.model.trainable_variables)
-                self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
-                train_f1_score = micro_f1(self.train_labels, predictions[self.train_mask])
-                valid_f1_score = micro_f1(self.valid_labels, predictions[self.valid_mask])
-                return loss, train_f1_score * 100, valid_f1_score * 100
-
-            @tf.function
-            def distributed_train_step():
-                per_replica_losses, per_replica_train_scores, per_replica_valid_scores = strategy.run(train_step, args=())
-                return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None),\
-                       per_replica_train_scores, per_replica_valid_scores
-
-            self.loss_object = tf.nn.sigmoid_cross_entropy_with_logits
-            self.model = self.create_model()
-            self.optimizer = Adam(lr=1e-2)
+        cluster_resolver = tf.distribute.cluster_resolver.TFConfigClusterResolver()
+        strategy = tf.distribute.experimental.ParameterServerStrategy(cluster_resolver)
 
         if cluster_resolver.task_type in ("worker", "ps"):
+            print("GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")
+            print("GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")
+            print("GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")
+            print("GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")
             server = tf.distribute.Server(
                 cluster_resolver.cluster_spec(),
                 job_name=cluster_resolver.task_type,
@@ -196,6 +159,48 @@ class GCN:
                 start=True)
             server.join()
         else:
+            with strategy.scope():
+                def compute_loss(labels, predictions):
+                    loss = self.loss_object(labels, predictions)
+                    return tf.reduce_mean(tf.reduce_sum(loss, axis=-1))  # Compute mean loss _per node_
+
+                def micro_f1(labels, logits):
+                    predicted = tf.math.round(tf.nn.sigmoid(logits))
+                    predicted = tf.cast(predicted, dtype=tf.int32)
+                    labels = tf.cast(labels, dtype=tf.int32)
+
+                    true_pos = tf.math.count_nonzero(predicted * labels)
+                    false_pos = tf.math.count_nonzero(predicted * (labels - 1))
+                    false_neg = tf.math.count_nonzero((predicted - 1) * labels)
+
+                    precision = true_pos / (true_pos + false_pos)
+                    recall = true_pos / (true_pos + false_neg)
+                    fmeasure = (2 * precision * recall) / (precision + recall)
+                    return tf.cast(fmeasure, tf.float32)
+
+                @tf.function
+                def train_step():
+                    with tf.GradientTape() as tape:
+                        predictions = self.model([self.features, self.fltr], training=True)
+                        loss = compute_loss(self.train_labels, predictions[self.train_mask])
+                        loss += sum(self.model.losses)
+                    gradients = tape.gradient(loss, self.model.trainable_variables)
+                    self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
+                    train_f1_score = micro_f1(self.train_labels, predictions[self.train_mask])
+                    valid_f1_score = micro_f1(self.valid_labels, predictions[self.valid_mask])
+                    return loss, train_f1_score * 100, valid_f1_score * 100
+
+                @tf.function
+                def distributed_train_step():
+                    per_replica_losses, per_replica_train_scores, per_replica_valid_scores = strategy.run(train_step,
+                                                                                                          args=())
+                    return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None), \
+                           per_replica_train_scores, per_replica_valid_scores
+
+                self.loss_object = tf.nn.sigmoid_cross_entropy_with_logits
+                self.model = self.create_model()
+                self.optimizer = Adam(lr=1e-2)
+
             coordinator = tf.distribute.experimental.coordinator.ClusterCoordinator(strategy)
             train_time = time.time()
             ema_loss = 0
