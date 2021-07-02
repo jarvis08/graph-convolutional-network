@@ -9,15 +9,21 @@ os.environ.pop('TF_CONFIG', None)
 
 import tensorflow as tf
 
-NUM_WORKERS = 3
+NUM_WORKERS = 2
 NUM_PS = 1
 
-workers = ["10.20.18.215:25000", "10.20.18.216:26000", "10.20.18.217:27000"]
+chief = ["10.20.18.215:25000"]
+workers = ["10.20.18.216:26000", "10.20.18.217:27000"]
 ps = ["10.20.18.218:28000"]
 cluster_dict = dict()
 cluster_dict['worker'] = workers
 cluster_dict['ps'] = ps
 cluster_spec = tf.train.ClusterSpec(cluster_dict)
+
+tf.distribute.Server(
+    cluster_spec,
+    job_name="chief",
+    task_index=0)
 for i in range(NUM_WORKERS):
     tf.distribute.Server(
         cluster_spec,
@@ -36,7 +42,7 @@ variable_partitioner = (
 strategy = tf.distribute.experimental.ParameterServerStrategy(
     cluster_resolver,
     variable_partitioner=variable_partitioner)
-# coordinator = tf.distribute.experimental.coordinator.ClusterCoordinator(strategy)
+coordinator = tf.distribute.experimental.coordinator.ClusterCoordinator(strategy)
 chief = True if not int(sys.argv[1]) else False
 n_gpu = len(tf.config.experimental.list_physical_devices('GPU'))
 
@@ -205,17 +211,17 @@ class GCN:
         for step in range(1, GCN.max_epochs_per_worker+1):
             step_time = time.time()
             loss, train_score, valid_score = distributed_train_step()
-            # coordinator.join()
-
-            loss /= NUM_WORKERS * n_gpu
-            if not ema_loss:
-                ema_loss = loss
-            ema_loss = ema_loss * 0.99 + loss * 0.01
-            if n_gpu > 1:
-                train_score = tf.reduce_mean(train_score.values)
-                valid_score = tf.reduce_mean(valid_score.values)
+            coordinator.join()
 
             if chief:
+                loss /= NUM_WORKERS * n_gpu
+                if not ema_loss:
+                    ema_loss = loss
+                ema_loss = ema_loss * 0.99 + loss * 0.01
+                if n_gpu > 1:
+                    train_score = tf.reduce_mean(train_score.values)
+                    valid_score = tf.reduce_mean(valid_score.values)
+
                 if step < GCN.min_epochs_per_worker:
                     log = "step: {}/{}  loss: {:.2f}  ema_loss: {:.2f}  train: {:.3f} %  valid: {:.3f} %  time: {:.1f} sec".format(step, GCN.max_epochs_per_worker, loss, ema_loss, train_score, valid_score, time.time()-step_time)
                     print(log)
