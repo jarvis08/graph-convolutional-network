@@ -5,10 +5,9 @@ import logging
 
 # Set distributed environment
 os.environ.pop('TF_CONFIG', None)
-# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 tf_config = dict()
 tf_config["cluster"] = {
-    "chief": ["10.20.18.215:28000"],
+    "chief": ["10.20.18.215:25000"],
     "worker": ["10.20.18.216:26000", "10.20.18.217:27000"],
     "ps": ["10.20.18.218:28000"]
 }
@@ -19,9 +18,12 @@ elif sys.argv[1] in ['1', '2']:
 else:
     tf_config["task"] = {"type": "ps", "index": 0}
 os.environ["TF_CONFIG"] = json.dumps(tf_config)
+os.environ["GRPC_FAIL_FAST"] = "use_caller"
 
 
 import tensorflow as tf
+cluster_resolver = tf.distribute.cluster_resolver.TFConfigClusterResolver()
+strategy = tf.distribute.experimental.ParameterServerStrategy(cluster_resolver)
 import time
 from datetime import datetime
 
@@ -144,15 +146,10 @@ class GCN:
         # Load data
         self.load_folded_dataset(DATA)
 
-        cluster_resolver = tf.distribute.cluster_resolver.TFConfigClusterResolver()
-        strategy = tf.distribute.experimental.ParameterServerStrategy(cluster_resolver)
-
-
         with strategy.scope():
             def compute_loss(labels, predictions):
                 loss = self.loss_object(labels, predictions)
                 return tf.reduce_mean(tf.reduce_sum(loss, axis=-1))  # Compute mean loss _per node_
-
 
             def micro_f1(labels, logits):
                 predicted = tf.math.round(tf.nn.sigmoid(logits))
@@ -168,7 +165,6 @@ class GCN:
                 fmeasure = (2 * precision * recall) / (precision + recall)
                 return tf.cast(fmeasure, tf.float32)
 
-
             @tf.function
             def train_step():
                 with tf.GradientTape() as tape:
@@ -181,17 +177,15 @@ class GCN:
                 valid_f1_score = micro_f1(self.valid_labels, predictions[self.valid_mask])
                 return loss, train_f1_score * 100, valid_f1_score * 100
 
-
             @tf.function
             def distributed_train_step():
                 per_replica_losses, per_replica_train_scores, per_replica_valid_scores = strategy.run(train_step, args=())
-                return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None),  per_replica_train_scores, per_replica_valid_scores
-
+                return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None),\
+                       per_replica_train_scores, per_replica_valid_scores
 
             self.loss_object = tf.nn.sigmoid_cross_entropy_with_logits
             self.model = self.create_model()
             self.optimizer = Adam(lr=1e-2)
-        self.model.summary(print_fn=self.logger.debug)
 
         if cluster_resolver.task_type in ("worker", "ps"):
             server = tf.distribute.Server(
@@ -203,40 +197,35 @@ class GCN:
             server.join()
         else:
             coordinator = tf.distribute.experimental.coordinator.ClusterCoordinator(strategy)
-
             train_time = time.time()
             ema_loss = 0
             for step in range(1, GCN.max_epochs_per_worker+1):
                 step_time = time.time()
-                # loss, train_score, valid_score = distributed_train_step()
-                loss, train_score, valid_score = coordinator.schedule(distributed_train_step)
+                loss, train_score, valid_score = coordinator.schedule(distributed_train_step, args=())
                 coordinator.join()
 
-                if chief:
-                    # loss /= n_workers * n_gpu
-                    loss /= n_workers
-                    if not ema_loss:
-                        ema_loss = loss
-                    ema_loss = ema_loss * 0.99 + loss * 0.01
-                    # if n_gpu > 1:
-                    #     train_score = tf.reduce_mean(train_score.values)
-                    #     valid_score = tf.reduce_mean(valid_score.values)
+                # loss /= n_workers * n_gpu
+                loss /= n_workers
+                if not ema_loss:
+                    ema_loss = loss
+                ema_loss = ema_loss * 0.99 + loss * 0.01
+                # if n_gpu > 1:
+                #     train_score = tf.reduce_mean(train_score.values)
+                #     valid_score = tf.reduce_mean(valid_score.values)
 
-                    if step < GCN.min_epochs_per_worker:
-                        log = "step: {}/{}  loss: {:.2f}  ema_loss: {:.2f}  train: {:.3f} %  valid: {:.3f} %  time: {:.1f} sec".format(step, GCN.max_epochs_per_worker, loss, ema_loss, train_score, valid_score, time.time()-step_time)
-                        print(log)
-                        self.logger.info(log)
-                    else:
-                        log = "step: {}/{}  loss: {:.2f}  ema_loss: {:.2f}  train: {:.3f} %  valid: {:.3f} %  best: {}, {:.4f} %  time: {:.1f} sec".format(step, GCN.max_epochs_per_worker, loss, ema_loss, train_score, valid_score, step - self.fury, self.best, time.time()-step_time)
-                        print(log)
-                        self.logger.info(log)
-
-                    if step < GCN.min_epochs_per_worker:
-                        continue
-                    if self.check_early_stopping(valid_score):
-                        break
+                if step < GCN.min_epochs_per_worker:
+                    log = "step: {}/{}  loss: {:.2f}  ema_loss: {:.2f}  train: {:.3f} %  valid: {:.3f} %  time: {:.1f} sec".format(step, GCN.max_epochs_per_worker, loss, ema_loss, train_score, valid_score, time.time()-step_time)
+                    print(log)
+                    self.logger.info(log)
                 else:
-                    print(f"step: {step}")
+                    log = "step: {}/{}  loss: {:.2f}  ema_loss: {:.2f}  train: {:.3f} %  valid: {:.3f} %  best: {}, {:.4f} %  time: {:.1f} sec".format(step, GCN.max_epochs_per_worker, loss, ema_loss, train_score, valid_score, step - self.fury, self.best, time.time()-step_time)
+                    print(log)
+                    self.logger.info(log)
+
+                if step < GCN.min_epochs_per_worker:
+                    continue
+                if self.check_early_stopping(valid_score):
+                    break
 
             log = "Training time: {:.4f}".format(time.time()-train_time)
             print(log)
@@ -245,7 +234,5 @@ class GCN:
 
 if __name__=="__main__":
     GCN.load_labels("./Data/results/v3")
-    for CROSS_VAL in range(1, 11):
-        gcn = GCN()
-        gcn.distributed_training(CROSS_VAL)
-        del gcn
+    gcn = GCN()
+    gcn.distributed_training(1)
