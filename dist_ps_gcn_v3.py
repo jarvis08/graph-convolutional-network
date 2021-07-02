@@ -16,25 +16,33 @@ chief = ["10.20.18.215:25000"]
 workers = ["10.20.18.216:26000", "10.20.18.217:27000"]
 ps = ["10.20.18.218:28000"]
 cluster_dict = dict()
+cluster_dict['chief'] = chief
 cluster_dict['worker'] = workers
 cluster_dict['ps'] = ps
 cluster_spec = tf.train.ClusterSpec(cluster_dict)
 
-tf.distribute.Server(
-    cluster_spec,
-    job_name="chief",
-    task_index=0)
-for i in range(NUM_WORKERS):
-    tf.distribute.Server(
-        cluster_spec,
-        job_name="worker",
-        task_index=i)
-tf.distribute.Server(
-    cluster_spec,
-    job_name="ps",
-    task_index=0)
-cluster_resolver = tf.distribute.cluster_resolver.SimpleClusterResolver(cluster_spec)
+# tf.distribute.Server(
+#     cluster_spec,
+#     job_name="chief",
+#     task_index=0)
+# for i in range(NUM_WORKERS):
+#     tf.distribute.Server(
+#         cluster_spec,
+#         job_name="worker",
+#         task_index=i)
+# tf.distribute.Server(
+#     cluster_spec,
+#     job_name="ps",
+#     task_index=0)
 
+cluster_resolver = tf.distribute.cluster_resolver.SimpleClusterResolver(cluster_spec)
+server = tf.distribute.Server(
+    cluster_resolver.cluster_spec(),
+    job_name=cluster_resolver.task_type,
+    task_index=cluster_resolver.task_id,
+    # protocol=cluster_resolver.rpc_layer or "grpc",
+    start=True)
+server.join()
 variable_partitioner = (
   tf.distribute.experimental.partitioners.FixedShardsPartitioner(
     num_shards = 2))
