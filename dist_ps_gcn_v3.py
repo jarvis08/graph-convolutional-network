@@ -8,8 +8,8 @@ os.environ.pop('TF_CONFIG', None)
 tf_config = dict()
 tf_config["cluster"] = {
     "chief": ["10.20.18.215:25000"],
-    "worker": ["10.20.18.216:26000", "10.20.18.217:27000"],
-    "ps": ["10.20.18.218:28000"]
+    "worker": ["10.20.18.216:25000", "10.20.18.217:25000"],
+    "ps": ["10.20.18.218:25000"]
 }
 if sys.argv[1] == "0":
     tf_config["task"] = {"type": "chief", "index": 0}
