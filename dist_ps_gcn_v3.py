@@ -36,7 +36,7 @@ from tensorflow.keras.regularizers import l2
 
 
 chief = True if not int(sys.argv[1]) else False
-n_workers = len(tf_config["cluster"]["workers"])
+n_workers = len(tf_config["cluster"]["worker"])
 n_gpu = len(tf.config.experimental.list_physical_devices('GPU'))
 
 
