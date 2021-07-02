@@ -231,7 +231,8 @@ class GCN:
         ema_loss = 0
         for step in range(1, GCN.max_epochs_per_worker+1):
             step_time = time.time()
-            loss, train_score, valid_score = distributed_train_step()
+            # loss, train_score, valid_score = distributed_train_step()
+            loss, train_score, valid_score = coordinator.schedule(distributed_train_step)
             coordinator.join()
 
             if chief:
