@@ -8,8 +8,8 @@ os.environ.pop('TF_CONFIG', None)
 tf_config = dict()
 tf_config["cluster"] = {
     "chief": ["10.20.18.215:25000"],
-    "worker": ["10.20.18.216:25000", "10.20.18.217:25000"],
-    "ps": ["10.20.18.218:25000"]
+    "worker": ["10.20.18.216:25001", "10.20.18.217:25002"],
+    "ps": ["10.20.18.218:25003"]
 }
 if sys.argv[1] == "0":
     tf_config["task"] = {"type": "chief", "index": 0}
@@ -18,6 +18,7 @@ elif sys.argv[1] in ['1', '2']:
 else:
     tf_config["task"] = {"type": "ps", "index": 0}
 os.environ["TF_CONFIG"] = json.dumps(tf_config)
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["GRPC_FAIL_FAST"] = "use_caller"
 
 
@@ -147,10 +148,6 @@ class GCN:
         strategy = tf.distribute.experimental.ParameterServerStrategy(cluster_resolver)
 
         if cluster_resolver.task_type in ("worker", "ps"):
-            print("GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")
-            print("GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")
-            print("GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")
-            print("GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")
             server = tf.distribute.Server(
                 cluster_resolver.cluster_spec(),
                 job_name=cluster_resolver.task_type,
@@ -179,7 +176,7 @@ class GCN:
                     return tf.cast(fmeasure, tf.float32)
 
                 @tf.function
-                def train_step():
+                def replica_fn():
                     with tf.GradientTape() as tape:
                         predictions = self.model([self.features, self.fltr], training=True)
                         loss = compute_loss(self.train_labels, predictions[self.train_mask])
@@ -191,9 +188,8 @@ class GCN:
                     return loss, train_f1_score * 100, valid_f1_score * 100
 
                 @tf.function
-                def distributed_train_step():
-                    per_replica_losses, per_replica_train_scores, per_replica_valid_scores = strategy.run(train_step,
-                                                                                                          args=())
+                def step_fn():
+                    per_replica_losses, per_replica_train_scores, per_replica_valid_scores = strategy.run(replica_fn)
                     return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None), \
                            per_replica_train_scores, per_replica_valid_scores
 
@@ -206,7 +202,7 @@ class GCN:
             ema_loss = 0
             for step in range(1, GCN.max_epochs_per_worker+1):
                 step_time = time.time()
-                loss, train_score, valid_score = coordinator.schedule(distributed_train_step, args=())
+                loss, train_score, valid_score = coordinator.schedule(step_fn)
                 coordinator.join()
 
                 # loss /= n_workers * n_gpu
