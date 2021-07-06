@@ -23,13 +23,15 @@ os.environ["GRPC_FAIL_FAST"] = "use_caller"
 
 
 import tensorflow as tf
+
+cluster_resolver = tf.distribute.cluster_resolver.TFConfigClusterResolver()
+strategy = tf.distribute.experimental.ParameterServerStrategy(cluster_resolver)
+
 import time
 from datetime import datetime
-
 import numpy as np
 import networkx as nx
 from spektral.layers import GraphConv, ops
-
 from tensorflow.keras.layers import Input, Dropout, Dense
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam, schedules
@@ -141,11 +143,7 @@ class GCN:
 
     def distributed_training(self, CV):
         DATA, self.MODEL = self.set_path(CV)
-
-        # Load data
         self.load_folded_dataset(DATA)
-        cluster_resolver = tf.distribute.cluster_resolver.TFConfigClusterResolver()
-        strategy = tf.distribute.experimental.ParameterServerStrategy(cluster_resolver)
 
         with strategy.scope():
             def compute_loss(labels, predictions):
@@ -190,6 +188,7 @@ class GCN:
 
 
         if cluster_resolver.task_type in ("worker", "ps"):
+            print("\nI'm {}\n".format(cluster_resolver.task_type))
             server = tf.distribute.Server(
                 cluster_resolver.cluster_spec(),
                 job_name=cluster_resolver.task_type,
@@ -198,6 +197,7 @@ class GCN:
                 start=True)
             server.join()
         else:
+            print("\nI'm {}\n".format(cluster_resolver.task_type))
             coordinator = tf.distribute.experimental.coordinator.ClusterCoordinator(strategy)
             train_time = time.time()
             ema_loss = 0
