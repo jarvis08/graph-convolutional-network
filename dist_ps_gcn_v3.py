@@ -12,18 +12,14 @@ tf_config["cluster"] = {
     "ps": ["10.20.18.218:25003"]
 }
 if sys.argv[1] == "0":
-    tf_config["task"] = {"type": "chief", "index": 0}
+    tf_config["task"] = {"type": "chief", "index": int(sys.argv[1])}
 elif sys.argv[1] in ['1', '2']:
-    tf_config["task"] = {"type": "worker", "index": int(sys.argv[1]) - 1}
+    tf_config["task"] = {"type": "worker", "index": int(sys.argv[1])}
 else:
-    tf_config["task"] = {"type": "ps", "index": 0}
+    tf_config["task"] = {"type": "ps", "index": int(sys.argv[1])}
 os.environ["TF_CONFIG"] = json.dumps(tf_config)
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["GRPC_FAIL_FAST"] = "use_caller"
-print()
-print()
-print("Set ENV.")
-print()
 
 import tensorflow as tf
 
