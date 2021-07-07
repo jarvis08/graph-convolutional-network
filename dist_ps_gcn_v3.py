@@ -12,9 +12,9 @@ tf_config["cluster"] = {
 if sys.argv[1] == "chief":
     tf_config["task"] = {"type": "chief", "index": 0}
 elif sys.argv[1] == "worker":
-    tf_config["task"] = {"type": "worker", "index": int(sys.argv[1]) - 1}
+    tf_config["task"] = {"type": "worker", "index": int(sys.argv[2]) - 1}
 elif sys.argv[1] == "ps":
-    tf_config["task"] = {"type": "ps", "index": int(sys.argv[1]) - 1}
+    tf_config["task"] = {"type": "ps", "index": int(sys.argv[2]) - 1}
 os.environ["TF_CONFIG"] = json.dumps(tf_config)
 os.environ["GRPC_FAIL_FAST"] = "use_caller"
 
