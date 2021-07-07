@@ -44,7 +44,6 @@ if cluster_resolver.task_type in ("worker", "ps"):
         start=True)
     server.join()
 else:
-    chief = True if not int(sys.argv[1]) else False
     n_workers = len(tf_config["cluster"]["worker"])
     n_gpu = len(tf.config.experimental.list_physical_devices('GPU'))
     now = datetime.now().strftime("%m-%d-%H%M")
@@ -56,13 +55,12 @@ else:
     base = f"./Model_dist_v3"
     models = base + f"/GCN_{now}"
     MODEL = models + f"/FOLD-{1}"
-    if chief:
-        if not os.path.exists(base):
-            os.mkdir(base)
-        if not os.path.exists(models):
-            os.mkdir(models)
-        if not os.path.exists(MODEL):
-            os.mkdir(MODEL)
+    if not os.path.exists(base):
+        os.mkdir(base)
+    if not os.path.exists(models):
+        os.mkdir(models)
+    if not os.path.exists(MODEL):
+        os.mkdir(MODEL)
     DATA = f"./Data/results/v3/FOLD-{1}"
 
     logging.basicConfig(filename=f"{MODEL}/train.log", level=logging.DEBUG)
