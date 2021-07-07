@@ -20,13 +20,13 @@ __Dataset must be downloaded (not public)__
 
 4. Run `python preprocess_dataset_v3.py`
 
-## Training GCN
+## 2. Training GCN
 
 ### 2-1. Train Model with Single Node
 
 Run `python train_gcn_v3.py` at the root dir.
 
-### 2-2. Distributed Learning [All-reduce]
+### 2-2. [All-reduce] Distributed Learning
 
 1. Set nodes' IP addresses in `dist_gcn_v3.py` file
 
@@ -42,7 +42,7 @@ $ python dist_gcn_v3.py 2
 ...
 ```
 
-### 2-3. Distributed Learning [Parameter Server]
+### 2-3. [Parameter Server] Distributed Learning
 
 - __1 Chief node & 2 Worker nodes & 1 PS node__
 
