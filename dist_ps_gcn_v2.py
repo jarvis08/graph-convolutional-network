@@ -131,8 +131,8 @@ else:
 
         @tf.function
         def step_fn():
-            per_replica_losses, per_replica_train_scores, per_replica_valid_scores = strategy.run(replica_fn)
-            return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None)
+            loss = strategy.run(replica_fn)
+            return strategy.reduce(tf.distribute.ReduceOp.SUM, loss, axis=None)
 
         loss_object = tf.nn.sigmoid_cross_entropy_with_logits
         model = create_model(features.shape, labels.shape)
