@@ -2,9 +2,11 @@
 
 ## 1. Installation
 
+For All-reduce distributed training or Single node training, TensorFlow version 2.x.x is required.
+
+To use Parameter Server, install TF version at least 2.4.
+
 ```bash
-# CUDA-10.1
-$ pip install tensorflow==2.3.1
 $ pip install spektral==0.6.2
 ```
 
