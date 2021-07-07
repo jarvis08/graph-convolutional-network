@@ -20,27 +20,64 @@ __Dataset must be downloaded (not public)__
 
 4. Run `python preprocess_dataset_v3.py`
 
-## 2-1. Train Model with Single Node
+## Training GCN
+
+### 2-1. Train Model with Single Node
 
 Run `python train_gcn_v3.py` at the root dir.
 
-## 2-2. Train with multi-server & multi-gpu
+### 2-2. Distributed Learning [All-reduce]
 
 1. Set nodes' IP addresses in `dist_gcn_v3.py` file
 
-2. Run `dist_gcn_v3.py` in each node. The chief node uses `0` for argument, and the rest use `1`.
+2. Run `dist_gcn_v3.py` in each node. The chief node uses `0` for argument, and the others use increasing number from `1`.
 
 ```bash
-# At the chief node
+# Chief node
 $ python dist_gcn_v3.py 0
 
 # Other worker nodes
 $ python dist_gcn_v3.py 1
+$ python dist_gcn_v3.py 2
+...
 ```
 
-## 2-3. Train with multi-server & single-gpu
+### 2-3. Distributed Learning [Parameter Server]
 
-Just uncomment line 8(`os.evirion...`) and use commands above 2-2.
+- __1 Chief node & 2 Worker nodes & 1 PS node__
+
+```
+# Node 1
+$ python dist_ps_gcn_v2.py 0
+
+# Node 2
+$ python dist_ps_gcn_v2.py 1
+
+# Node 3
+$ python dist_ps_gcn_v2.py 2
+
+# Node 4
+$ python dist_ps_gcn_v2.py 3
+```
+
+- __1 Chief node & 3 [Worker + PS] nodes__
+
+```
+# Node 1
+$ python dist_ps_gcn_v3.py chief
+ 
+# Node 2
+$ python dist_ps_gcn_v3.py worker 1
+$ python dist_ps_gcn_v3.py ps 1
+
+# Node 3
+$ python dist_ps_gcn_v3.py worker 2
+$ python dist_ps_gcn_v3.py ps 2
+
+# Node 4
+$ python dist_ps_gcn_v3.py worker 3
+$ python dist_ps_gcn_v3.py ps 3
+```
 
 ## 3. Model Checkpoint & Logging
 
